@@ -2,11 +2,136 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>asterism</title>
+    <title>Asterism - NASA Astronomy Picture of the Day</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link
+      href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet">
+    <link rel="stylesheet" href="src/style.css">
   </head>
+
   <body>
+    <canvas id="starfield"></canvas>
+    <div class="grain"></div>
+
+    <header class="masthead">
+      <div class="masthead-inner">
+        <div class="brand">
+          <span class="brand-mark">✦</span>
+          <div class="brand-text">
+            <h1>Asterism</h1>
+            <p>An astronomer's logbook, drawn daily from NASA's APOD archive</p>
+          </div>
+        </div>
+        <button id="logbook-toggle" class="ghost-btn">
+          Logged entries <span id="logbook-count">0</span>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="control-strip">
+        <button id="prev-day" class="tick-btn" title="Previous day">&#8592;</button>
+    
+        <div class="date-field">
+          <label for="date-input">Observation date</label>
+          <input type="date" id="date-input">
+        </div>
+    
+        <button id="next-day" class="tick-btn" title="Next day">&#8594;</button>
+        <button id="today-btn" class="brass-btn">Today</button>
+        <button id="random-btn" class="brass-btn brass-btn--outline">Random date</button>
+        <button id="archive-btn" class="ghost-btn">Browse archive</button>
+      </section>
+    
+      <section id="on-this-day" class="on-this-day hidden">
+        <h2>On this day</h2>
+        <div id="past-years-strip" class="past-years-strip"></div>
+      </section>
+    
+      <section class="plate-wrap">
+    
+        <div id="loading" class="loading-state">
+          <div class="spinner"></div>
+          <p>Developing today's plate…</p>
+        </div>
+    
+        <div id="error" class="error-state hidden">
+          <p id="error-message">No plate could be recovered for this date.</p>
+          <button id="retry-btn" class="brass-btn brass-btn--outline">Try again</button>
+        </div>
+    
+        <article id="plate" class="plate hidden">
+          <div class="plate-frame">
+            <span class="corner corner-top-left"></span><span class="corner corner-top-right"></span>
+            <span class="corner corner-bottom-left"></span><span class="corner corner-bottom-right"></span>
+    
+            <div class="media-box" id="media-box">
+              <img id="apod-img" alt="">
+              <iframe id="apod-video" class="hidden" allow="fullscreen" title="APOD video"></iframe>
+              <button id="expand-btn" class="expand-btn" title="View full size">&#8599;</button>
+            </div>
+    
+            <div class="plate-meta">
+              <div class="meta-row">
+                <span class="meta-label">Date</span>
+                <span id="meta-date" class="meta-mono"></span>
+              </div>
+              <div class="meta-row" id="meta-copyright-row">
+                <span class="meta-label">Credit</span>
+                <span id="meta-copyright" class="meta-mono"></span>
+              </div>
+            </div>
+          </div>
+    
+          <div class="plate-notes">
+            <h2 id="apod-title"></h2>
+            <p id="apod-explanation"></p>
+            <div class="plate-actions">
+              <button id="save-btn" class="brass-btn">☆ Add to log</button>
+              <a id="hd-link" href="#" target="_blank" rel="noopener">Open original ↗</a>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <div id="archive-view" class="archive-view hidden">
+      <div class="archive-head">
+        <div class="archive-month-nav">
+          <button id="archive-prev-month" class="tick-btn">&#8592;</button>
+          <h2 id="archive-month-label"></h2>
+          <button id="archive-next-month" class="tick-btn">&#8594;</button>
+        </div>
+        <button id="archive-close" class="ghost-btn">Close ✕</button>
+      </div>
+      <p class="drawer-hint">A month at a glance. Click a plate to open it.</p>
+      <div id="archive-grid" class="archive-grid"></div>
+      <p id="archive-loading" class="drawer-hint hidden">Pulling the month's records…</p>
+    </div>
+    
+    <aside id="logbook-drawer" class="logbook-drawer">
+      <div class="drawer-head">
+        <h2>Logged entries</h2>
+        <button id="drawer-close" class="ghost-btn">Close ✕</button>
+      </div>
+      <p class="drawer-hint">Plates you've marked ☆ are kept here, in this browser for next time.</p>
+      <ul id="logbook-list" class="logbook-list"></ul>
+      <p id="logbook-empty" class="drawer-hint">Nothing logged yet. Find a plate you like and add it.</p>
+    </aside>
+    <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
+    
+    <div id="lightbox" class="lightbox hidden">
+      <button id="lightbox-close" class="lightbox-close">✕</button>
+      <img id="lightbox-img" alt="">
+    </div>
+    
+    <footer class="site-foot">
+      <p>Imagery and data courtesy of NASA's Astronomy Picture of the Day archive.</p>
+    </footer>
+
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
   </body>

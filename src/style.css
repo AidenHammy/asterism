@@ -1,0 +1,54 @@
+*{
+  box-sizing: border-box;
+}
+
+html, body{
+  margin: 0;
+  padding: 0;
+  background: var(--ink-navy-deep);   
+  color: var(--parchment);
+  font-family: var(--font-mono);
+  min-height: 100%;
+}
+
+body {
+  position: relative;
+  overflow-x: hidden;
+}
+
+::selection{
+  background: var(--brass);
+  color: var(--ink-navy-deep);
+}
+
+a{
+  color: var(--brass-bright);
+}
+
+.hidden {
+  display: none !important;
+}
+
+#starfield {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.035;
+}
+
+/* ---------- layout shell ---------- */
+
+header,
+main,
+footer{
+  position: relative;
+  z-index: 2;
+}
