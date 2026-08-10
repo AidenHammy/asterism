@@ -366,3 +366,270 @@ els.logbookToggle.addEventListener('click', openDrawer);
 els.drawerClose.addEventListener('click', closeDrawer);
 els.drawerBackdrop.addEventListener('click', closeDrawer);
 
+// "on this day" strip (same date, past years) 
+ 
+const onThisDayCache = new Map();
+ 
+async function loadOnThisDay(dateStr) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const firstYear = Number(APOD_FIRST_DATE.slice(0, 4));
+ 
+  const pastYears = [];
+  for (let y = year - 1; y >= firstYear && pastYears.length < 4; y--) {
+    pastYears.push(y);
+  }
+ 
+  if (pastYears.length === 0) {
+    els.onThisDay.classList.add('hidden');
+    return;
+  }
+ 
+  if (onThisDayCache.has(dateStr)) {
+    renderOnThisDay(onThisDayCache.get(dateStr));
+    return;
+  }
+ 
+  const pastDates = pastYears
+    .map((y) => `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+    .filter((d) => !(month === 2 && day === 29 && !isLeapYear(Number(d.slice(0, 4))))); // feb 29 doesn't exist most years lol
+ 
+  // fetching these one at a time instead of Promise.all-ing them. slightly
+  // slower but only 4 requests so who cares and it's easier to follow
+  const foundEntries = [];
+  for (const pastDate of pastDates) {
+    const entry = await fetchApodQuietly(pastDate);
+    if (entry) foundEntries.push(entry);
+  }
+ 
+  onThisDayCache.set(dateStr, foundEntries);
+  renderOnThisDay(foundEntries);
+}
+ 
+// same as loadApod's fetch but swallows errors instead of throwing 
+// one missing past year shouldn't nuke the whole strip
+async function fetchApodQuietly(dateStr) {
+  if (cache.has(dateStr)) return cache.get(dateStr);
+ 
+  try {
+    const url = `${APOD_ENDPOINT}?api_key=${encodeURIComponent(NASA_API_KEY)}&date=${dateStr}`;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+ 
+    const data = await response.json();
+    cache.set(dateStr, data);
+    return data;
+  } catch {
+    return null;
+  }
+}
+ 
+function isLeapYear(year) {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+ 
+function renderOnThisDay(entries) {
+  if (entries.length === 0) {
+    els.onThisDay.classList.add('hidden');
+    return;
+  }
+ 
+  els.onThisDay.classList.remove('hidden');
+  els.pastYearsStrip.innerHTML = '';
+ 
+  entries.forEach((entry) => {
+    els.pastYearsStrip.appendChild(buildOnThisDayCard(entry));
+  });
+}
+ 
+function buildOnThisDayCard(entry) {
+  const card = document.createElement('div');
+  card.className = 'past-year-card';
+ 
+  const thumb = entry.media_type === 'video' ? (entry.thumbnail_url || '') : entry.url;
+  const year = entry.date.slice(0, 4);
+ 
+  card.innerHTML = `
+    <img src="${thumb}" alt="" loading="lazy">
+    <div class="past-year-info">
+      <p class="past-year-label">${year}</p>
+      <p class="past-year-title"></p>
+    </div>`;
+  
+  card.querySelector('.past-year-title').textContent = entry.title || 'Untitled plate';
+ 
+  card.addEventListener('click', () => loadApod(entry.date));
+  return card;
+}
+
+//  archive (browse a whole month)
+ 
+let archiveCursor = new Date(); // whatever month is currently showing
+const archiveCache = new Map();
+ 
+function openArchive() {
+  const baseDate = els.dateInput.value ? new Date(els.dateInput.value + 'T00:00:00') : new Date();
+  archiveCursor = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+ 
+  els.archiveView.classList.remove('hidden');
+  loadArchiveMonth();
+}
+ 
+function closeArchive(){
+  els.archiveView.classList.add('hidden');
+}
+ 
+async function loadArchiveMonth() {
+  const year = archiveCursor.getFullYear();
+  const month = archiveCursor.getMonth();
+  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+ 
+  els.archiveMonthLabel.textContent = archiveCursor.toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+ 
+  const now = new Date();
+  els.archiveNextMonth.disabled =
+    archiveCursor.getFullYear() === now.getFullYear() &&
+    archiveCursor.getMonth() === now.getMonth(); // no point letting people page into a month with nothing in it yet
+ 
+  els.archiveGrid.innerHTML = '';
+  els.archiveLoading.classList.remove('hidden');
+ 
+  try {
+    let monthEntries = archiveCache.get(monthKey);
+ 
+    if (!monthEntries) {
+      const startDate = `${monthKey}-01`;
+      const lastDayOfMonth = new Date(year, month + 1, 0).getDate(); // "day 0 of next month" rolls back to the last day of this one
+      const endDate = `${monthKey}-${String(lastDayOfMonth).padStart(2, '0')}`;
+      const cappedEndDate = endDate > todayStr() ? todayStr() : endDate;
+ 
+      const url = `${APOD_ENDPOINT}?api_key=${encodeURIComponent(NASA_API_KEY)}&start_date=${startDate}&end_date=${cappedEndDate}`;
+      const response = await fetch(url);
+      if (!response.ok) throw await buildApodError(response);
+ 
+      monthEntries = await response.json();
+      archiveCache.set(monthKey, monthEntries);
+      monthEntries.forEach((entry) => cache.set(entry.date, entry));
+    }
+ 
+    renderArchiveGrid(monthEntries);
+  } catch (err) {
+    els.archiveGrid.innerHTML = `<p class="drawer-hint">${err.message}</p>`;
+  } finally {
+    els.archiveLoading.classList.add('hidden');
+  }
+}
+ 
+function renderArchiveGrid(entries) {
+  els.archiveGrid.innerHTML = '';
+ 
+  // nasa gives these oldest-first, flipping it feels more natural to scroll through
+  const newestFirst = [...entries].reverse();
+ 
+  newestFirst.forEach((entry) => {
+    els.archiveGrid.appendChild(buildArchiveCard(entry));
+  });
+}
+ 
+function buildArchiveCard(entry) {
+  const card = document.createElement('div');
+  card.className = 'archive-card';
+ 
+  const thumb = entry.media_type === 'video' ? (entry.thumbnail_url || '') : entry.url;
+  const dayNumber = Number(entry.date.slice(8, 10));
+ 
+  card.innerHTML = `
+    <img src="${thumb}" alt="" loading="lazy">
+    <div class="archive-card-info">
+      <p class="archive-card-day">Day ${dayNumber}</p>
+      <p class="archive-card-title"></p>
+    </div>`;
+ 
+  card.querySelector('.archive-card-title').textContent = entry.title || 'Untitled plate';
+ 
+  card.addEventListener('click', () => {
+    loadApod(entry.date);
+    closeArchive();
+  });
+ 
+  return card;
+}
+ 
+els.archiveBtn.addEventListener('click', openArchive);
+els.archiveClose.addEventListener('click', closeArchive);
+ 
+els.archivePrevMonth.addEventListener('click', () => {
+  archiveCursor = new Date(archiveCursor.getFullYear(), archiveCursor.getMonth() - 1, 1);
+  loadArchiveMonth();
+});
+ 
+els.archiveNextMonth.addEventListener('click', () => {
+  archiveCursor = new Date(archiveCursor.getFullYear(), archiveCursor.getMonth() + 1, 1);
+  loadArchiveMonth();
+});
+
+// starfield bg, i mean decoration is nice. just draws twinkly dots behind everything
+// couldn't do this myself so i had to go to google and also see a tutorial.
+// actually fun fact, most of my js is from tutorials. i don't like to use ai because
+// what's the point when you're just gonna copy without understanding anything?
+// atleast the tutorials explain what you're doing so you can recall it the next time!
+ 
+function initStarfield() {
+  const canvas = document.getElementById('starfield');
+  const ctx = canvas.getContext('2d');
+  let stars = [];
+ 
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+ 
+  function layoutStars() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+ 
+    const starCount = Math.floor((canvas.width * canvas.height) / 9000); 
+ 
+    stars = Array.from({ length: starCount }, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      radius: Math.random() * 1.1 + 0.2,
+      baseAlpha: Math.random() * 0.6 + 0.2,
+      phase: Math.random() * Math.PI * 2,
+      twinkleSpeed: Math.random() * 0.015 + 0.005,
+    }));
+  }
+ 
+  function drawFrame(time) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+ 
+    for (const star of stars) {
+      const twinkle = prefersReducedMotion
+        ? 0
+        : Math.sin(time * star.twinkleSpeed + star.phase) * 0.35;
+      const alpha = Math.max(0, Math.min(1, star.baseAlpha + twinkle));
+ 
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#e8e4d8';
+      ctx.beginPath();
+      ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+ 
+    ctx.globalAlpha = 1;
+    if (!prefersReducedMotion) requestAnimationFrame(drawFrame);
+  }
+ 
+  window.addEventListener('resize', layoutStars);
+  layoutStars();
+  requestAnimationFrame(drawFrame);
+}
+ 
+ 
+// -kicking everything off
+
+els.dateInput.max = todayStr();
+els.dateInput.min = APOD_FIRST_DATE;
+ 
+initStarfield();
+renderLogbook();
+loadApod(todayStr());
