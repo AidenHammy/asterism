@@ -1,22 +1,22 @@
-document.getElementById("datepicker").addEventListener("change", () => {
-  const date = document.querySelector("#datepicker").value;
-  const API_KEY = import.meta.env.VITE_NASA_API_KEY;
-  document.querySelector("#app").innerHTML = "<p>Hello world</p>";
-
-  fetch(`https://api.nasa.gov/planetary/apod?api_key=${API_KEY}&date=${date}`);
-});
-
 const NASA_API_KEY = import.meta.env.VITE_NASA_API_KEY;
 
 const APOD_ENDPOINT = "https://api.nasa.gov/planetary/apod";
 const APOD_FIRST_DATE = "1995-06-16" // apod didn't exist before this, had to search this up because who would've known
 
+// this is literally the very first thing i wrote for this project, back
+// when i was just checking the api actually returned data before building
+// any of the real UI. never deleted it, feels wrong to at this point.
+// it's basically a fossil
+function _originalTest() {
+  document.querySelector("#app").innerHTML = "<p>Hello world</p>";
+}
+
 const els = {
-  dateInput = document.getElementById('date-input'),
-  prevDay = document.getElementById('prev-day'),
-  nextDay = document.getElementById('next-day'),
-  todayBtn = document.getElementById('today-btn'),
-  randomBtn = document.getElementById('random-btn'),
+  dateInput: document.getElementById('date-input'),
+  prevDay: document.getElementById('prev-day'),
+  nextDay: document.getElementById('next-day'),
+  todayBtn: document.getElementById('today-btn'),
+  randomBtn: document.getElementById('random-btn'),
 
   loading: document.getElementById('loading'),
   error: document.getElementById('error'),
@@ -55,8 +55,8 @@ const els = {
   logbookDrawer: document.getElementById('logbook-drawer'),
   logbookList: document.getElementById('logbook-list'),
   logbookEmpty: document.getElementById('logbook-empty'),
-  drawerClose: document.getElementById('logbook-close'),
-  drawerBackdrop: document.getElementById('logbook-backdrop'),
+  drawerClose: document.getElementById('drawer-close'),
+  drawerBackdrop: document.getElementById('drawer-backdrop'),
 
   lightbox: document.getElementById('lightbox'),
   lightboxImg: document.getElementById('lightbox-img'),
@@ -91,7 +91,7 @@ function randomDateStr() {
 
 const formatDisplayDate = (dateStr) => {
   const date = new Date(dateStr + 'T00:00:00');
-  return date.toLocaleDateString({
+  return date.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'numeric',
     day: 'numeric'
@@ -144,9 +144,21 @@ function renderApod(data) {
 
   els.loading.classList.add('hidden');
   els.error.classList.add('hidden');
-  els.plate.classList.add('hidden');
+  els.plate.classList.remove('hidden');
 
   updateSaveButton();
+}
+
+async function buildApodError(response){ 
+  if(response.status === 429) {
+    return new Error("NASA's demo key hit its hourly limit. add your own key (readme) or just wait a bit");
+  }
+  if(response.status === 400 || response.status === 404) {
+    return new Error('nothing exists for that date! apod started at june 16 1995');
+  }
+
+  const body = await response.json().catch(() => ({}));
+  return new Error(body.msg || `archive returned an error (${response.status})`);
 }
 
 async function loadApod(dateStr){
@@ -169,3 +181,188 @@ async function loadApod(dateStr){
     setError(err.message);
   }
 }
+
+// date nav buttons
+
+els.dateInput.addEventListener('change', () => {
+  if (els.dateInput.value) loadApod(els.dateInput.value);
+});
+
+els.prevDay.addEventListener('click', () => {
+  const currentDate = els.dateInput.value || todayStr();
+  loadApod(shiftDate(currentDate, -1));
+});
+
+els.nextDay.addEventListener('click', () => {
+  const currentDate = els.dateInput.value || todayStr();
+  const nextDate = shiftDate(currentDate, 1);
+  if (nextDate <= todayStr()) loadApod(nextDate); // next SHALL NOT. go past today! RAH
+})
+
+function goToToday() {
+  loadApod(todayStr());
+}
+
+els.todayBtn.addEventListener('click', goToToday);
+els.randomBtn.addEventListener('click', () => loadApod(randomDateStr()));
+els.retryBtn.addEventListener('click', () => loadApod(els.dateInput.value || todayStr()));
+
+// lightbox
+
+els.expandBtn.addEventListener('click', () => {
+  if (!currentEntry) return;
+  els.lightboxImg.src = currentEntry.hdurl || currentEntry.url;
+  els.lightboxImg.alt = currentEntry.title || "";
+  els.lightbox.classList.remove('hidden');
+});
+
+function closeLightbox(){
+  els.lightbox.classList.add('hidden');
+}
+
+els.lightboxClose.addEventListener('click', closeLightbox);
+
+els.lightbox.addEventListener('click', (e) => {
+  // closing if backgruond is clicked and not the image itself
+  if (e.target === els.lightbox) closeLightbox();
+});
+
+
+// keyboard shortcuts, idk personally it helps a lot
+
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape'){
+    closeLightbox();
+    closeDrawer();
+    closeArchive();
+    return;
+  }
+
+  if (document.activeElement === els.dateInput) return; // lets NOT fight the native datepicker's own arrow key behaviour
+
+  const archiveIsOpen = !els.archiveView.classList.contains('hidden');
+  const lightboxIsOpen = !els.lightbox.classList.contains('hidden');
+  if (archiveIsOpen || lightboxIsOpen) return;
+  if (e.key === 'ArrowLeft') els.prevDay.click();
+  if (e.key === 'ArrowRight') els.nextDay.click();
+
+});
+
+// logbook or call it saved favourites, same thing
+// using localstorage so it doesn't need backend and survives a refresh asw
+
+const STORAGE_KEY = "fieldlog.entries";
+
+function getSavedEntries(){
+  try{
+    const stored = localStorage.getItem(STORAGE_KEY) || "[]";
+    return JSON.parse(stored);
+  } catch {
+    return [];
+  }
+}
+
+function setSavedEntries(list) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  renderLogbook();
+}
+
+function isSaved(dateStr) {
+  return getSavedEntries().some(entry => entry.date == dateStr);
+}
+
+function updateSaveButton() {
+  if (!currentEntry) return;
+  const saved = isSaved(currentEntry.date);
+  els.saveBtn.textContent = saved ? "Saved to log" : "Add to log";
+  els.saveBtn.classList.toggle("is-saved", saved);
+}
+
+els.saveBtn.addEventListener('click', () => {
+  if(!currentEntry) return;
+
+  const savedList = getSavedEntries();
+  const existingIndex = savedList.findIndex((entry) => entry.date === currentEntry.date);
+
+  if(existingIndex >= 0){
+    savedList.splice(existingIndex, 1); // already saved, remove it
+  } else {
+    // don't need the whole apod object, just enough to show it in the drawer later
+    savedList.unshift({
+      date: currentEntry.date,
+      title: currentEntry.title,
+      media_type: currentEntry.media_type,
+      thumb: currentEntry.media_type === 'video' ? (currentEntry.thumbnail_url || '') : currentEntry.url
+    });
+  }
+  setSavedEntries(savedList);
+  updateSaveButton();
+});
+
+function renderLogbook() {
+  const savedList = getSavedEntries();
+ 
+  els.logbookCount.textContent = savedList.length;
+  els.logbookList.innerHTML = '';
+  els.logbookEmpty.classList.toggle('hidden', savedList.length > 0);
+ 
+  savedList.forEach((entry) => {
+    els.logbookList.appendChild(buildLogbookRow(entry));
+  });
+}
+
+function buildLogbookRow(entry) {
+  const row = document.createElement("li");
+  row.className = "logbook-item";
+ 
+  var thumbnail = document.createElement("img");
+  thumbnail.src = entry.thumb || "";
+  thumbnail.alt = "";
+  thumbnail.loading = "lazy";
+ 
+  const textWrap = document.createElement("div");
+  textWrap.className = "logbook-item-info";
+ 
+  const titleEl = document.createElement("p");
+  titleEl.className = "logbook-item-title";
+  titleEl.textContent = entry.title || "Untitled plate";
+ 
+  const dateEl = document.createElement("p");
+  dateEl.className = "logbook-item-date";
+  dateEl.textContent = formatDisplayDate(entry.date);
+ 
+  textWrap.append(titleEl, dateEl);
+ 
+  const removeBtn = document.createElement("button");
+  removeBtn.className = "logbook-item-remove";
+  removeBtn.textContent = "✕";
+  removeBtn.addEventListener("click", function (e) {
+    e.stopPropagation(); // otherwise clicking remove also opens the row underneath it, annoying bug I hit while testing
+    const withoutThisEntry = getSavedEntries().filter((e2) => e2.date !== entry.date);
+    setSavedEntries(withoutThisEntry);
+    if (currentEntry && currentEntry.date === entry.date) updateSaveButton();
+  });
+ 
+  row.addEventListener("click", () => {
+    loadApod(entry.date);
+    closeDrawer();
+  });
+ 
+  row.append(thumbnail, textWrap, removeBtn);
+  return row;
+}
+
+function openDrawer() {
+  els.logbookDrawer.classList.add('open');
+  els.drawerBackdrop.classList.remove('hidden');
+}
+ 
+function closeDrawer() {
+  els.logbookDrawer.classList.remove('open');
+  els.drawerBackdrop.classList.add('hidden');
+}
+ 
+els.logbookToggle.addEventListener('click', openDrawer);
+els.drawerClose.addEventListener('click', closeDrawer);
+els.drawerBackdrop.addEventListener('click', closeDrawer);
+
