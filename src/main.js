@@ -68,7 +68,10 @@ let currentEntry = null;
 const cache = new Map(); // flipping back to a date you already looked at doesn't re-fetch it BUT it resets on refresh
 
 function toDateStr(date){
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0"); // getMonth() is 0-indexed
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function todayStr() {
@@ -149,12 +152,15 @@ function renderApod(data) {
   updateSaveButton();
 }
 
-async function buildApodError(response){ 
-  if(response.status === 429) {
-    return new Error("NASA's demo key hit its hourly limit. add your own key (readme) or just wait a bit");
-  }
+async function buildApodError(response, dateStr){ 
   if(response.status === 400 || response.status === 404) {
-    return new Error('nothing exists for that date! apod started at june 16 1995');
+    if (dateStr && dateStr < APOD_FIRST_DATE) {
+      return new Error('nothing exists for that date! apod started at june 16 1995 (i swear i had to search this up. DON\'T call me a nerd!)');
+    }
+    if (dateStr && dateStr >= todayStr()) {
+      return new Error("today's plate isn't up yet! NASA usually posts it later in the day. try again in a bit or check yesterday");
+    }
+    return new Error("no plate found for that date");
   }
 
   const body = await response.json().catch(() => ({}));
@@ -170,7 +176,7 @@ async function loadApod(dateStr){
     if (!data) {
       const url = APOD_ENDPOINT + "?api_key=" + encodeURIComponent(NASA_API_KEY) + "&date=" + dateStr + "&thumbs=true";
       const response = await fetch(url);
-      if(!response.ok) throw await buildApodError(response);
+      if(!response.ok) throw await buildApodError(response, dateStr);
       data = await response.json();
       cache.set(dateStr, data);
     }
